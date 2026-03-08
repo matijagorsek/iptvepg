@@ -17,6 +17,7 @@ import io
 import re
 import sys
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.request import Request, urlopen
@@ -119,17 +120,41 @@ def build_source_to_our_id(
     return mapping
 
 
+def _parse_programme_start(start_attr: Optional[str]):
+    """Parsira start atribut (YYYYMMDDHHmmss +0000) u datetime. Vraća None ako ne valja."""
+    if not start_attr or len(start_attr) < 14:
+        return None
+    try:
+        s = start_attr.strip()[:14]
+        return datetime(
+            int(s[:4]), int(s[4:6]), int(s[6:8]),
+            int(s[8:10]), int(s[10:12]), int(s[12:14]),
+            tzinfo=timezone.utc,
+        )
+    except (ValueError, TypeError):
+        return None
+
+
 def extract_programmes_from_xml(
-    content: bytes, source_to_our: Dict[str, str], out_file
+    content: bytes,
+    source_to_our: Dict[str, str],
+    out_file,
+    max_days_ahead: int = 7,
 ) -> int:
-    """Stream-parse XML, za svaki <programme> čiji channel je u source_to_our upiši ga u out_file s channel=our_id. Vraća broj upisanih."""
+    """Stream-parse XML; ispiši samo programme od sada do max_days_ahead dana (da file ostane < 100 MB)."""
     count = 0
+    now = datetime.now(timezone.utc)
+    cutoff = now + timedelta(days=max_days_ahead)
     try:
         for event, elem in ET.iterparse(io.BytesIO(content), events=("end",)):
             if elem.tag == "programme":
                 ch = elem.get("channel")
                 our_id = source_to_our.get(ch) if ch else None
                 if our_id is not None:
+                    start_dt = _parse_programme_start(elem.get("start"))
+                    if start_dt is not None and (start_dt > cutoff or start_dt < now - timedelta(hours=12)):
+                        elem.clear()
+                        continue
                     elem.set("channel", our_id)
                     out_file.write("  ")
                     out_file.write(ET.tostring(elem, encoding="unicode", method="xml"))
@@ -157,6 +182,12 @@ def main():
         "--use-playwright",
         action="store_true",
         help="Dohvati listu EPG URL-ova s iptv-epg.org preko Playwrighta (sve zemlje)",
+    )
+    ap.add_argument(
+        "--max-days",
+        type=int,
+        default=7,
+        help="Samo programme unutar sljedećih N dana (smanjuje veličinu filea, default 7)",
     )
     args = ap.parse_args()
 
@@ -226,7 +257,9 @@ def main():
             content = fetch_epg_content(epg_url)
             if not content:
                 continue
-            n = extract_programmes_from_xml(content, source_to_our, f)
+            n = extract_programmes_from_xml(
+                content, source_to_our, f, max_days_ahead=args.max_days
+            )
             total_prog += n
             print(f"    -> {n} programa")
 

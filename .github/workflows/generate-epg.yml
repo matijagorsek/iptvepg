@@ -35,8 +35,8 @@ jobs:
           IPTV_PASSWORD: ${{ secrets.IPTV_PASSWORD }}
         run: python3 generate_epg_github.py output
 
-      - name: Build merged EPG (s programima – id + name match, sve zemlje)
-        run: python3 build_merged_epg.py output/playlist_with_epg.m3u -o output/epg_merged.xml
+      - name: Build merged EPG (s programima – id + name match, max 7 dana, 50 zemalja = < 100 MB)
+        run: python3 build_merged_epg.py output/playlist_with_epg.m3u -o output/epg_merged.xml --limit-countries 50 --max-days 7
 
       - name: Commit and push
         run: |
