@@ -1,6 +1,19 @@
 # EPG za TiviMate (IPTV)
 
-Tri načina korištenja:
+Tri načina korištenja.
+
+---
+
+## Koristiš Xtream Codes login?
+
+Ako u TiviMateu dodaješ playlistu **preko Xtream Codes prijave** (URL + username + password), **ne moraš mijenjati način dodavanja**. Samo dodaš **EPG izvor** za tu playlistu:
+
+1. Generiraj EPG (npr. GitHub Actions ispod – isti Secrets kao za prijavu).
+2. U TiviMateu: **Playlist** ostaje onako kako jest (Xtream Codes login).  
+   Za tu playlistu otvori postavke → **EPG** → dodaj EPG izvor i stavi **samo EPG URL**, npr.:  
+   `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/epg.xml`
+
+EPG ima channel id = stream ID (broj iz URL-a streama). TiviMate kanale iz Xtream Codesa obično identificira tim istim ID-om, pa se EPG automatski spoji na kanale. **Playlistu ne prebacuješ na URL** – ostaje login, a EPG se ubacuje preko ovog linka.
 
 ---
 
@@ -25,10 +38,12 @@ Workflow na GitHubu povlači playlistu s providera i generira `playlist_with_epg
 
 4. **U TiviMateu**  
    Za ovaj repo (matijagorsek/iptvepg), nakon što workflow generira datoteke:
-   - **Playlist URL**:  
-     `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/playlist_with_epg.m3u`
-   - **EPG URL**:  
+   - **Ako koristiš Xtream Codes login**: za tu playlistu dodaj samo **EPG URL**:  
      `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/epg.xml`  
+     (Playlist ostaje preko prijave, EPG se ubacuje preko ovog linka.)
+   - **Ako koristiš playlist po URL-u**:  
+     Playlist: `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/playlist_with_epg.m3u`  
+     EPG: `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/epg.xml`  
    (Ako koristiš drugu granu, zamijeni `main`.)
 
 Workflow se automatski pokreće **svakih 12 sati**; možeš ga i ručno pokrenuti u **Actions** → **Run workflow**. Nema uploadanja – sve se odrađuje na GitHubu.
