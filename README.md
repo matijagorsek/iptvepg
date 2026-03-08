@@ -52,7 +52,9 @@ Workflow na GitHubu povlači playlistu s providera i generira `playlist_with_epg
 
 Workflow se automatski pokreće **svakih 12 sati**; možeš ga i ručno pokrenuti u **Actions** → **Run workflow**. Nema uploadanja – sve se odrađuje na GitHubu.
 
-**Testiranje:** Nakon što workflow uspješno prođe, u TiviMateu dodaj playlistu (ili ostani na Xtream Codes login), u EPG postavke zalijepi URL na `epg_merged.xml` i pokreni **Osvježi EPG**. Za kanale s programom (npr. HRT 1, njemački kanali) trebao bi se pojaviti TV vodič.
+**Testiranje:** Nakon što workflow uspješno prođe, u TiviMateu dodaj playlistu (ili ostani na Xtream Codes login), u EPG postavke zalijepi URL na `epg_merged.xml` i pokreni **Osvježi EPG**. Za kanale s programom (Croatia, General, Sport, itd.) trebao bi se pojaviti TV vodič.
+
+**Uskladiivanje kanala:** EPG se spaja po **channel id** (ako provider šalje npr. `hrt1.hr`) i po **normaliziranom imenu** (npr. "|EXYU| PINK HD" ↔ "Pink", "|UK| SKY SPORTS 1" ↔ "Sky Sports 1"). Zato General, Sport i ostale kategorije mogu dobiti programe ako ime kanala odgovara nekom kanalu na iptv-epg.org. Workflow koristi **sve zemlje** s iptv-epg.org (bez limita).
 
 ### Važno – privatni repo
 
@@ -121,7 +123,7 @@ Koristi `build_merged_epg.py`. On generira **jedan** XML file u koji:
 - **Svi** tvoji kanali ulaze kao `<channel>` – svaki kanal ima ulaz u EPG-u;
 - za kanale koji se poklapaju s [iptv-epg.org](https://iptv-epg.org) (po zemljama) uključuje i **stvarne programe** (TV vodič).
 
-**Nemaju svi kanali programe** – samo oni koji postoje na iptv-epg.org (npr. HR, DE, AT, …). Ostali kanali i dalje su u fileu (TiviMate ih prikaže), ali bez rasporeda.
+**Nemaju svi kanali programe** – samo oni koji se uspiju uskladiti s iptv-epg.org (po **channel id** ili po **normaliziranom imenu**). Zato mogu dobiti programe i kanali iz General, Sport, EXYU, UK, itd., ne samo Croatia. Ostali kanali i dalje su u fileu (TiviMate ih prikaže), ali bez rasporeda.
 
 ```bash
 python3 build_merged_epg.py /path/do/playliste.m3u -o epg_merged.xml

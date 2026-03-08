@@ -24,9 +24,27 @@ from urllib.request import Request, urlopen
 # Import iz find_epg_links
 from find_epg_links import (
     fetch_channel_ids_from_epg,
+    fetch_channel_ids_and_names_from_epg,
     get_epg_urls_fallback,
+    get_epg_urls_with_playwright,
     parse_m3u_channels,
 )
+
+
+def normalize_channel_name(name: str) -> str:
+    """Normalizira ime za usporedbu: uklanja prefikse |XX|, HD/FHD/4K, specijalne znakove, lower."""
+    if not name:
+        return ""
+    s = name.strip().lower()
+    # Ukloni |XX| ili |XX| na početku/kraju
+    s = re.sub(r"^\|[^|]+\|\s*", "", s)
+    s = re.sub(r"\s*\|[^|]+\|$", "", s)
+    # Ukloni HD, FHD, 4K, UHD, RAW, itd.
+    s = re.sub(r"\b(hd|fhd|uhd|4k|raw|ᴿᴬᵂ|ᴴᴰ|ᵁᴴᴰ|⁴ᴷ)\b", "", s, flags=re.IGNORECASE)
+    # Samo slova, brojke, razmak
+    s = re.sub(r"[^\w\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
 def escape_xml(text: str) -> str:
@@ -68,15 +86,36 @@ def fetch_epg_content(epg_url: str, max_bytes: int = 25 * 1024 * 1024) -> Option
 
 
 def build_source_to_our_id(
-    source_channel_ids: Set[str], our_channel_ids_for_this_epg: List[str]
+    source_channel_ids: Set[str],
+    our_channel_ids_for_this_epg: List[str],
+    source_channels_with_names: List[Tuple[str, str]],
+    our_channels_all: List[Tuple[str, str]],
 ) -> Dict[str, str]:
-    """Za EPG izvor: mapiranje source channel id -> naš channel_id (za ispis <programme>)."""
-    mapping = {}
+    """Mapiranje epg channel id -> naš channel_id: prvo po id, pa po normaliziranom imenu."""
+    mapping: Dict[str, str] = {}
     our_lower = {c.lower(): c for c in our_channel_ids_for_this_epg}
     for sid in source_channel_ids:
         oid = our_lower.get(sid.lower())
         if oid:
             mapping[sid] = oid
+    assigned_epg = set(mapping.keys())
+    assigned_our = set(mapping.values())
+    # Name-based: naši kanali koji u ovom EPG-u još nisu upareni
+    epg_norm_to_id = [(normalize_channel_name(name), epg_id) for epg_id, name in source_channels_with_names if name]
+    for our_id, our_name in our_channels_all:
+        if our_id in assigned_our:
+            continue
+        norm_our = normalize_channel_name(our_name)
+        if not norm_our or len(norm_our) < 2:
+            continue
+        for norm_epg, epg_id in epg_norm_to_id:
+            if epg_id in assigned_epg:
+                continue
+            if norm_our == norm_epg or (len(norm_epg) >= 3 and (norm_our in norm_epg or norm_epg in norm_our)):
+                mapping[epg_id] = our_id
+                assigned_epg.add(epg_id)
+                assigned_our.add(our_id)
+                break
     return mapping
 
 
@@ -112,7 +151,12 @@ def main():
         "--limit-countries",
         type=int,
         default=None,
-        help="Max broj zemalja za preuzimanje programa (default: sve)",
+        help="Max broj zemalja (default: sve iz fiksne liste)",
+    )
+    ap.add_argument(
+        "--use-playwright",
+        action="store_true",
+        help="Dohvati listu EPG URL-ova s iptv-epg.org preko Playwrighta (sve zemlje)",
     )
     args = ap.parse_args()
 
@@ -125,27 +169,36 @@ def main():
     channels = parse_m3u_channels(str(m3u_path))
     print(f"  Ukupno kanala: {len(channels)}")
 
-    epg_list = get_epg_urls_fallback()
-    if args.limit_countries:
-        epg_list = epg_list[: args.limit_countries]
+    if args.use_playwright:
+        epg_list = get_epg_urls_with_playwright(limit_countries=args.limit_countries)
+        if not epg_list:
+            print("  Playwright nije vratio linkove (nije instaliran?), koristim fiksnu listu.", file=sys.stderr)
+            epg_list = get_epg_urls_fallback()
+            if args.limit_countries:
+                epg_list = epg_list[: args.limit_countries]
+    else:
+        epg_list = get_epg_urls_fallback()
+        if args.limit_countries:
+            epg_list = epg_list[: args.limit_countries]
     print(f"EPG izvora (zemalja): {len(epg_list)}")
 
-    # channel_id (naš) -> epg_url
-    channel_id_to_epg: Dict[str, str] = {}
-    # epg_url -> set of source channel ids (iz tog EPG-a)
+    # Za svaki EPG: set channel id-ova i lista (id, display_name)
     epg_source_ids: Dict[str, Set[str]] = {}
+    epg_channels_with_names: Dict[str, List[Tuple[str, str]]] = {}
     for country, epg_url in epg_list:
         ids = fetch_channel_ids_from_epg(epg_url)
         epg_source_ids[epg_url] = ids
+        id_names = fetch_channel_ids_and_names_from_epg(epg_url)
+        epg_channels_with_names[epg_url] = id_names
+
+    # Naši kanali koji imaju id match (po channel_id)
+    channel_id_to_epg: Dict[str, str] = {}
+    for epg_url, ids in epg_source_ids.items():
         for cid in ids:
             if cid.lower() not in channel_id_to_epg:
                 channel_id_to_epg[cid.lower()] = epg_url
-
-    # Naši kanali koji imaju EPG izvor
-    our_channels_with_epg = [
-        (cid, name) for cid, name in channels if channel_id_to_epg.get(cid.lower())
-    ]
-    print(f"Kanala s dostupnim programom (iptv-epg.org): {len(our_channels_with_epg)}")
+    our_ids_with_id_match = {c.lower() for c, _ in channels if channel_id_to_epg.get(c.lower())}
+    print(f"Kanala s id matchom: {len(our_ids_with_id_match)}")
 
     out_path = Path(args.output)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -158,14 +211,18 @@ def main():
 
         total_prog = 0
         for country, epg_url in epg_list:
-            our_ids = [c for c, _ in our_channels_with_epg if channel_id_to_epg.get(c.lower()) == epg_url]
-            if not our_ids:
-                continue
             source_ids = epg_source_ids.get(epg_url) or set()
-            source_to_our = build_source_to_our_id(source_ids, our_ids)
+            our_ids_for_this_epg = [c for c, _ in channels if channel_id_to_epg.get(c.lower()) == epg_url]
+            source_channels_with_names = epg_channels_with_names.get(epg_url) or []
+            source_to_our = build_source_to_our_id(
+                source_ids,
+                our_ids_for_this_epg,
+                source_channels_with_names,
+                channels,
+            )
             if not source_to_our:
                 continue
-            print(f"  Preuzimam programe: {country} ...")
+            print(f"  Preuzimam programe: {country} ({len(source_to_our)} kanala) ...")
             content = fetch_epg_content(epg_url)
             if not content:
                 continue

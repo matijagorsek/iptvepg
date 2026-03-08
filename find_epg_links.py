@@ -67,12 +67,11 @@ def parse_m3u_channels(m3u_path: str) -> List[Tuple[str, str]]:
 
 
 def get_epg_urls_with_playwright(limit_countries: Optional[int] = None) -> List[Tuple[str, str]]:
-    """Dohvaća (country_code, epg_url) s iptv-epg.org/guides. Koristi Playwright."""
+    """Dohvaća (country_code, epg_url) s iptv-epg.org/guides. Koristi Playwright. Ako nije instaliran, vraća []."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print("Instaliraj Playwright: pip install playwright && playwright install chromium", file=sys.stderr)
-        sys.exit(1)
+        return []
 
     out = []
     with sync_playwright() as p:
@@ -138,6 +137,46 @@ def fetch_channel_ids_from_epg(epg_url: str, max_bytes: int = 2 * 1024 * 1024):
     for m in re.finditer(r'<channel\s+id=["\']([^"\']+)["\']', text):
         channel_ids.add(m.group(1))
     return channel_ids
+
+
+def fetch_channel_ids_and_names_from_epg(
+    epg_url: str, max_bytes: int = 2 * 1024 * 1024
+) -> List[Tuple[str, str]]:
+    """Dohvati channel id + display-name iz EPG XML-a (za name-based matching). Vraća [(id, display_name), ...]."""
+    result: List[Tuple[str, str]] = []
+    url = epg_url
+    try:
+        for _ in range(3):
+            req = Request(url, headers={"User-Agent": "TiviMate-EPG-Matcher/1.0"})
+            with urlopen(req, timeout=30) as r:
+                data = b""
+                while len(data) < max_bytes:
+                    chunk = r.read(64 * 1024)
+                    if not chunk:
+                        break
+                    data += chunk
+                text = data.decode("utf-8", errors="replace")
+            if text.strip().startswith("<?xml") or text.strip().startswith("<tv"):
+                break
+            m = re.search(r'url=["\']([^"\']+)["\']', text)
+            if m:
+                url = m.group(1).strip()
+                continue
+            break
+    except Exception:
+        return result
+    # Po bloku: <channel id="..."> ... </channel> i unutar njega prvi <display-name>
+    for blok in re.finditer(
+        r'<channel\s+id=["\']([^"\']+)["\'][^>]*>(.*?)</channel>',
+        text,
+        re.DOTALL,
+    ):
+        cid = blok.group(1)
+        inner = blok.group(2)
+        name_m = re.search(r"<display-name[^>]*>([^<]*)</display-name>", inner)
+        name = name_m.group(1).strip() if name_m else ""
+        result.append((cid, name))
+    return result
 
 
 def main():
