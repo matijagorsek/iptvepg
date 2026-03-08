@@ -22,11 +22,27 @@ def get_config():
 
 
 def fetch_m3u(base: str, user: str, password: str) -> str:
+    import http.client
     import urllib.request
     url = f"{base}/get.php?username={user}&password={password}&type=m3u_plus"
     req = urllib.request.Request(url, headers={"User-Agent": "TiviMate-EPG-GitHub/1.0"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return r.read().decode("utf-8", errors="replace")
+    chunks = []
+    chunk_size = 1024 * 1024  # 1 MB
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as r:
+                while True:
+                    chunk = r.read(chunk_size)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            return b"".join(chunks).decode("utf-8", errors="replace")
+        except (http.client.IncompleteRead, OSError) as e:
+            if attempt < max_retries - 1:
+                print(f"  Prekid veze ({e}), ponovni pokušaj {attempt + 2}/{max_retries}...")
+            else:
+                raise
 
 
 def main():
