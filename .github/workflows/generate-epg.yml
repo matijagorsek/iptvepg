@@ -33,10 +33,10 @@ jobs:
           IPTV_BASE_URL: ${{ secrets.IPTV_BASE_URL }}
           IPTV_USERNAME: ${{ secrets.IPTV_USERNAME }}
           IPTV_PASSWORD: ${{ secrets.IPTV_PASSWORD }}
-        run: python3 generate_epg_github.py output
+        run: python3 scripts/generate_epg_github.py output
 
       - name: Build merged EPG (s programima – 2 dana, 35 zemalja = < 100 MB; bez videoteke/VOD)
-        run: python3 build_merged_epg.py output/playlist_with_epg.m3u -o output/epg_merged.xml --limit-countries 35 --max-days 2 --skip-vod
+        run: python3 scripts/build_merged_epg.py output/playlist_with_epg.m3u -o output/epg_merged.xml --limit-countries 35 --max-days 2 --skip-vod
 
       - name: Commit and push
         run: |

@@ -4,12 +4,8 @@ Parsira M3U playlistu i generira:
 1. XMLTV EPG datoteku (za TiviMate) s jednim <channel> po kanalu
 2. Ažurirani M3U s tvg-id na svakom kanalu (spajanje s EPG-om)
 
-Korištenje:
-  python3 m3u_to_epg.py /path/to/playlist.m3u
-
-Izlaz (u isti folder kao skripta):
-  - epg.xml (XMLTV za TiviMate)
-  - playlist_with_epg.m3u (M3U s tvg-id)
+Korištenje (iz roota projekta):
+  python3 scripts/m3u_to_epg.py /path/to/playlist.m3u [izlazni_folder]
 """
 
 import re
@@ -19,11 +15,9 @@ from pathlib import Path
 
 
 def sanitize_channel_id(name: str, seen: set) -> str:
-    """Jedinstveni, XML-safe channel id od tvg-name."""
-    # Ukloni ili zamijeni znakove neprikladne za XML id
     safe = re.sub(r'[^\w\s\-.]', '', name)
     safe = re.sub(r'\s+', '_', safe.strip()) or "channel"
-    base = safe[:80]  # skrati
+    base = safe[:80]
     id_ = base
     n = 0
     while id_ in seen:
@@ -34,12 +28,9 @@ def sanitize_channel_id(name: str, seen: set) -> str:
 
 
 def parse_extinf(line: str) -> dict:
-    """Iz #EXTINF:-1 tvg-id="" tvg-name="X" ... izvuci tvg-name (ili naslov)."""
     out = {}
-    # tvg-name="..."
     m = re.search(r'tvg-name="([^"]*)"', line)
     out["tvg_name"] = (m.group(1).strip() if m else "")
-    # Naslov je zadnji dio nakon zadnjeg zareza
     if "," in line:
         title = line.split(",", 1)[-1].strip()
         if not out["tvg_name"]:
@@ -59,7 +50,7 @@ def process_m3u(m3u_path: str, out_dir: Path):
     m3u_out_path = out_dir / "playlist_with_epg.m3u"
 
     seen_ids = set()
-    channels = []  # (channel_id, display_name, extinf_line, url)
+    channels = []
 
     with open(m3u_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
@@ -82,7 +73,6 @@ def process_m3u(m3u_path: str, out_dir: Path):
             continue
         i += 1
 
-    # Upis XMLTV
     with open(epg_path, "w", encoding="utf-8") as xml_out:
         xml_out.write('<?xml version="1.0" encoding="UTF-8"?>\n')
         xml_out.write('<tv generator-info-name="m3u_to_epg">\n')
@@ -92,7 +82,6 @@ def process_m3u(m3u_path: str, out_dir: Path):
             xml_out.write('  </channel>\n')
         xml_out.write('</tv>\n')
 
-    # Upis M3U s tvg-id i URL-ovima
     with open(m3u_out_path, "w", encoding="utf-8") as m3u_out:
         m3u_out.write("#EXTM3U\n")
         for channel_id, _display_name, extinf, url in channels:
@@ -111,8 +100,7 @@ def process_m3u(m3u_path: str, out_dir: Path):
 
 def main():
     if len(sys.argv) < 2:
-        print("Korištenje: python3 m3u_to_epg.py <putanja_do_playliste.m3u> [izlazni_folder]")
-        print("  Izlazni folder po defaultu: isti kao skripta (epg-iptv)")
+        print("Korištenje: python3 scripts/m3u_to_epg.py <putanja_do_playliste.m3u> [izlazni_folder]")
         sys.exit(1)
     m3u_path = Path(sys.argv[1]).resolve()
     if not m3u_path.exists():

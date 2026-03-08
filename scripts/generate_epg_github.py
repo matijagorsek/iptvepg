@@ -2,14 +2,26 @@
 """
 Skripta za GitHub Actions: čita IPTV_* iz okoline, dohvaća M3U s providera,
 generira playlist_with_epg.m3u i epg.xml te ih sprema u zadani folder (npr. output/).
-Koristi iste funkcije kao iptv_epg_server.py.
+Pokreni iz roota projekta: python3 scripts/generate_epg_github.py output
 """
 
 import os
 import sys
 from pathlib import Path
 
-# Konfiguracija iz okoline (u Actions postavljena iz Secrets)
+# Root projekta u path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_ROOT = _SCRIPT_DIR.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from epg_iptv.iptv_epg_server import (
+    parse_m3u_and_inject_tvg_id,
+    build_m3u_with_tvg_id,
+    build_epg_xml,
+)
+
+
 def get_config():
     base = os.environ.get("IPTV_BASE_URL", "").rstrip("/")
     user = os.environ.get("IPTV_USERNAME", "")
@@ -48,12 +60,6 @@ def fetch_m3u(base: str, user: str, password: str) -> str:
 def main():
     out_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "output")
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    from iptv_epg_server import (
-        parse_m3u_and_inject_tvg_id,
-        build_m3u_with_tvg_id,
-        build_epg_xml,
-    )
 
     base, user, password = get_config()
     print("Dohvaćam playlistu s providera...")

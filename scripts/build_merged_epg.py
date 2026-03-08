@@ -4,26 +4,28 @@ Generira JEDAN EPG file (XMLTV) za učitavanje u TiviMate koji:
 - sadrži SVE tvoje kanale (iz M3U) kao <channel> – svaki kanal ima ulaz u EPG-u;
 - za kanale koji se poklapaju s iptv-epg.org uključuje i stvarne programe (TV vodič).
 
-Nisu svi kanali imaju programe – samo oni koji postoje na iptv-epg.org (po zemljama).
-Ostali kanali i dalje imaju <channel> u fileu (TiviMate ih prikaže), ali bez rasporeda.
-
-Korištenje:
-  python3 build_merged_epg.py /path/do/playliste.m3u -o epg_merged.xml [--limit-countries 40]
-  U TiviMateu stavi EPG URL na ovaj file (npr. raw GitHub link na epg_merged.xml).
+Korištenje (iz roota projekta):
+  python3 scripts/build_merged_epg.py /path/do/playliste.m3u -o epg_merged.xml [--limit-countries 40]
 """
 
 import argparse
 import io
 import re
 import sys
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+# Dodaj root projekta u path da se nađe epg_iptv
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_ROOT = _SCRIPT_DIR.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.request import Request, urlopen
+import xml.etree.ElementTree as ET
 
-# Import iz find_epg_links i točni EPG izvori (1 URL = 1 kanal)
-from find_epg_links import (
+from epg_iptv.find_epg_links import (
     fetch_channel_ids_from_epg,
     fetch_channel_ids_and_names_from_epg,
     get_epg_urls_fallback,
@@ -31,8 +33,8 @@ from find_epg_links import (
     parse_m3u_channels,
     parse_m3u_channels_with_groups,
 )
-from epg_sources_exact import get_tvprofil_exact_sources, TVPROFIL_ALIASES
-from channel_aliases import all_lookup_variants
+from epg_iptv.epg_sources_exact import get_tvprofil_exact_sources, TVPROFIL_ALIASES
+from epg_iptv.channel_aliases import all_lookup_variants
 
 
 def normalize_channel_name(name: str) -> str:
@@ -40,12 +42,9 @@ def normalize_channel_name(name: str) -> str:
     if not name:
         return ""
     s = name.strip().lower()
-    # Ukloni |XX| ili |XX| na početku/kraju
     s = re.sub(r"^\|[^|]+\|\s*", "", s)
     s = re.sub(r"\s*\|[^|]+\|$", "", s)
-    # Ukloni HD, FHD, 4K, UHD, RAW, itd.
     s = re.sub(r"\b(hd|fhd|uhd|4k|raw|ᴿᴬᵂ|ᴴᴰ|ᵁᴴᴰ|⁴ᴷ)\b", "", s, flags=re.IGNORECASE)
-    # Samo slova, brojke, razmak
     s = re.sub(r"[^\w\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
@@ -96,9 +95,6 @@ def build_source_to_our_id(
     our_channels_all: List[Tuple[str, str]],
     exclude_our_ids: Optional[Set[str]] = None,
 ) -> Dict[str, str]:
-    """Mapiranje epg channel id -> naš channel_id: prvo po id, pa po normaliziranom imenu.
-    exclude_our_ids: naši kanali koji već imaju EPG (npr. iz točnog izvora) – preskačemo ih.
-    our_lower uključuje i alias varijante (npr. bbc1.uk -> bbc1.gb) da EPG id matcha naš id."""
     exclude_our_ids = exclude_our_ids or set()
     mapping: Dict[str, str] = {}
     our_lower: Dict[str, str] = {}
@@ -111,7 +107,6 @@ def build_source_to_our_id(
             mapping[sid] = oid
     assigned_epg = set(mapping.keys())
     assigned_our = set(mapping.values())
-    # Name-based: naši kanali koji u ovom EPG-u još nisu upareni
     epg_norm_to_id = [(normalize_channel_name(name), epg_id) for epg_id, name in source_channels_with_names if name]
     for our_id, our_name in our_channels_all:
         if our_id in assigned_our or our_id in exclude_our_ids:
@@ -131,7 +126,6 @@ def build_source_to_our_id(
 
 
 def _parse_programme_start(start_attr: Optional[str]):
-    """Parsira start atribut (YYYYMMDDHHmmss +0000) u datetime. Vraća None ako ne valja."""
     if not start_attr or len(start_attr) < 14:
         return None
     try:
@@ -151,7 +145,6 @@ def extract_programmes_from_xml(
     out_file,
     max_days_ahead: int = 7,
 ) -> Tuple[int, Set[str]]:
-    """Stream-parse XML; ispiši samo programme od sada do max_days_ahead dana. Vraća (broj programa, set our_id koji imaju program)."""
     count = 0
     our_ids_with_programme: Set[str] = set()
     now = datetime.now(timezone.utc)
@@ -184,34 +177,11 @@ def main():
     )
     ap.add_argument("m3u", help="Putanja do M3U playliste")
     ap.add_argument("-o", "--output", default="epg_merged.xml", help="Izlazni EPG file")
-    ap.add_argument(
-        "--limit-countries",
-        type=int,
-        default=None,
-        help="Max broj zemalja (default: sve iz fiksne liste)",
-    )
-    ap.add_argument(
-        "--use-playwright",
-        action="store_true",
-        help="Dohvati listu EPG URL-ova s iptv-epg.org preko Playwrighta (sve zemlje)",
-    )
-    ap.add_argument(
-        "--max-days",
-        type=int,
-        default=7,
-        help="Samo programme unutar sljedećih N dana (smanjuje veličinu filea, default 7)",
-    )
-    ap.add_argument(
-        "--exclude-group-pattern",
-        type=str,
-        default=None,
-        help="Regex za group-title: kanali čiji group odgovara ne uključuju se (npr. videoteka/VOD). Primjer: 'MOVIES|NETFLIX|SERIES|CINEMA|VIDEOTEKA|VOD'",
-    )
-    ap.add_argument(
-        "--skip-vod",
-        action="store_true",
-        help="Preskoči VOD/videoteka grupe (ekvivalent --exclude-group-pattern 'MOVIES|NETFLIX|SERIES|CINEMA|VIDEOTEKA|VOD|RAMADAN|PLUTO|DISNEY|APPLE|AMAZON|HBO|HULU')",
-    )
+    ap.add_argument("--limit-countries", type=int, default=None, help="Max broj zemalja")
+    ap.add_argument("--use-playwright", action="store_true", help="Dohvati EPG URL-ove preko Playwrighta")
+    ap.add_argument("--max-days", type=int, default=7, help="Samo programme unutar N dana")
+    ap.add_argument("--exclude-group-pattern", type=str, default=None, help="Regex za group-title (isključi kanale)")
+    ap.add_argument("--skip-vod", action="store_true", help="Preskoči VOD/videoteka grupe")
     args = ap.parse_args()
 
     m3u_path = Path(args.m3u)
@@ -239,7 +209,7 @@ def main():
     if args.use_playwright:
         epg_list = get_epg_urls_with_playwright(limit_countries=args.limit_countries)
         if not epg_list:
-            print("  Playwright nije vratio linkove (nije instaliran?), koristim fiksnu listu.", file=sys.stderr)
+            print("  Playwright nije vratio linkove, koristim fiksnu listu.", file=sys.stderr)
             epg_list = get_epg_urls_fallback()
             if args.limit_countries:
                 epg_list = epg_list[: args.limit_countries]
@@ -249,7 +219,6 @@ def main():
             epg_list = epg_list[: args.limit_countries]
     print(f"EPG izvora (zemalja): {len(epg_list)}")
 
-    # Za svaki EPG: set channel id-ova i lista (id, display_name)
     epg_source_ids: Dict[str, Set[str]] = {}
     epg_channels_with_names: Dict[str, List[Tuple[str, str]]] = {}
     for country, epg_url in epg_list:
@@ -258,7 +227,6 @@ def main():
         id_names = fetch_channel_ids_and_names_from_epg(epg_url)
         epg_channels_with_names[epg_url] = id_names
 
-    # Naši kanali koji imaju id match (po channel_id)
     channel_id_to_epg: Dict[str, str] = {}
     for epg_url, ids in epg_source_ids.items():
         for cid in ids:
@@ -279,7 +247,6 @@ def main():
         total_prog = 0
         channels_linked: Set[str] = set()
 
-        # Točni EPG izvori (1 URL = 1 kanal, nema krivog linkanja) – tvprofil.net
         exact_sources = get_tvprofil_exact_sources()
         exact_matched = [c for c, _ in channels if c.lower() in exact_sources]
         if exact_matched:
@@ -291,7 +258,6 @@ def main():
             content = fetch_epg_content(url, max_bytes=2 * 1024 * 1024)
             if not content:
                 continue
-            # U XML-u je channel id = canonical (npr. rts1.sr); naš id može biti alias (rts1.rs)
             canonical = TVPROFIL_ALIASES.get(our_id.lower(), our_id.lower())
             source_to_our = {canonical.lower(): our_id}
             n, ids_written = extract_programmes_from_xml(
@@ -333,7 +299,6 @@ def main():
     print(f"Zapisano: {out_path}")
     print(f"Ukupno programa upisano: {total_prog}")
     print(f"Kanala s EPG programom: {len(channels_linked)} / {total_channels} ({pct:.1f}%)")
-    print("Ostali kanali su u fileu (prikazuju se u TiviMateu) ali bez rasporeda – nema ih u EPG izvorima ili ime se ne poklapa.")
     print("U TiviMateu dodaj ovaj file kao EPG URL (npr. raw GitHub link).")
 
 

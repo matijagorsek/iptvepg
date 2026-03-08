@@ -5,8 +5,8 @@ svakom kanalu i servira EPG XML. U TiviMateu jednom postaviš dva URL-a i više
 ne moraš ništa uploadati – sve se odrađuje u aplikaciji (dohvat s ovog servera).
 
 Korištenje:
-  1. Postavi .env: IPTV_BASE_URL, IPTV_USERNAME, IPTV_PASSWORD
-  2. Pokreni: python3 iptv_epg_server.py
+  1. Postavi .env u rootu projekta: IPTV_BASE_URL, IPTV_USERNAME, IPTV_PASSWORD
+  2. Pokreni: python3 scripts/iptv_epg_server.py  (ili python3 -m epg_iptv.iptv_epg_server)
   3. U TiviMateu: Playlist URL = http://tvoj-server:8765/playlist.m3u
                   EPG URL      = http://tvoj-server:8765/epg.xml
 """
@@ -17,6 +17,7 @@ import time
 import urllib.request
 import xml.sax.saxutils as saxutils
 from io import StringIO
+from pathlib import Path
 
 # Optional: Flask za jednostavan HTTP server
 try:
@@ -32,8 +33,8 @@ CACHE_SECONDS = 300  # 5 minuta
 
 
 def load_env():
-    from pathlib import Path
-    env_path = Path(__file__).resolve().parent / ".env"
+    # .env u rootu projekta (jedan nivo iznad epg_iptv/)
+    env_path = Path(__file__).resolve().parent.parent / ".env"
     if env_path.exists():
         for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()

@@ -2,6 +2,29 @@
 
 Tri načina korištenja.
 
+### Struktura projekta
+
+```
+epg-iptv/
+├── epg_iptv/              # Zajednički moduli (biblioteka)
+│   ├── channel_aliases.py   # Aliasi tvg-id po zemljama (.uk→.gb, .rs→.sr, …)
+│   ├── epg_sources_exact.py  # Točni EPG URL-ovi (tvprofil.net, 1 URL = 1 kanal)
+│   ├── find_epg_links.py    # Parsiranje M3U, dohvat EPG izvora (iptv-epg.org)
+│   └── iptv_epg_server.py   # Logika servera: M3U + EPG XML
+├── scripts/                # Izvršne skripte (pokretati iz roota projekta)
+│   ├── build_merged_epg.py  # Generira epg_merged.xml (svi kanali + programi)
+│   ├── generate_epg_github.py  # Za GitHub Actions: playlist + epg.xml
+│   ├── find_epg_links.py   # CLI: koji kanali imaju EPG (CSV/JSON)
+│   ├── iptv_epg_server.py  # Pokreće lokalni EPG/playlist server
+│   └── m3u_to_epg.py       # Jednokratno: M3U → epg.xml + playlist s tvg-id
+├── output/                 # Generirane datoteke (playlist, epg.xml, epg_merged.xml)
+├── .env.example
+├── requirements.txt
+└── README.md
+```
+
+Sve skripte pokrećeš **iz roota repozitorija**, npr. `python3 scripts/build_merged_epg.py ...`.
+
 ---
 
 ## Ako fork-aš ovaj repo (što treba napraviti)
@@ -90,7 +113,7 @@ Workflow se automatski pokreće **svakih 12 sati**; možeš ga i ručno pokrenut
 
 **Uskladiivanje kanala:** Prvo se koriste **točni EPG linkovi** (1 URL = 1 kanal) s [tvprofil.net](http://tvprofil.net/xmltv/?channels=): za kanale čiji se channel id točno poklapa (npr. `htv1.hr`, `rtl.hr`, `pink.sr`, Arena Sport, Eurosport…) – nema krivog linkanja. Zatim se dodaju izvori s **iptv-epg.org** po zemljama: spajanje po **channel id** i po **normaliziranom imenu** (npr. "|EXYU| PINK HD" ↔ "Pink"). Workflow koristi sve zemlje s iptv-epg.org (bez limita).
 
-**Pokrivenost po zemljama:** EPG se povlači za **sve zemlje** na iptv-epg.org (AL, AR, AU, AT, BA, BE, BR, BG, CA, HR, CZ, DK, FI, FR, DE, GR, HU, IN, IT, JP, MK, ME, NL, NO, PL, PT, RO, RU, RS, SI, ES, SE, CH, TR, UA, GB, US, …). Ako provider šalje drugačiji tvg-id sufiks (npr. `.uk` umjesto `.gb` za UK, `.rs`↔`.sr` za Srbiju), u `channel_aliases.py` su definirani **aliasi po zemljama** tako da se kanali i dalje ispravno spoje.
+**Pokrivenost po zemljama:** EPG se povlači za **sve zemlje** na iptv-epg.org (AL, AR, AU, AT, BA, BE, BR, BG, CA, HR, CZ, DK, FI, FR, DE, GR, HU, IN, IT, JP, MK, ME, NL, NO, PL, PT, RO, RU, RS, SI, ES, SE, CH, TR, UA, GB, US, …). Ako provider šalje drugačiji tvg-id sufiks (npr. `.uk` umjesto `.gb` za UK, `.rs`↔`.sr` za Srbiju), u `epg_iptv/channel_aliases.py` su definirani **aliasi po zemljama** tako da se kanali i dalje ispravno spoje.
 
 ### Važno – privatni repo
 
@@ -116,7 +139,7 @@ Mali server drži tvoje **podatke za prijavu** (URL providera, username, passwor
 2. **Instaliraj ovisnosti i pokreni server**
    ```bash
    pip install -r requirements.txt
-   python3 iptv_epg_server.py
+   python3 scripts/iptv_epg_server.py
    ```
    Server sluša na `http://0.0.0.0:8765` (ili `PORT`/`HOST` iz `.env`).
 
@@ -141,7 +164,7 @@ Kad TiviMate osvježi playlistu ili EPG, server na zahtjev dohvaća novu listu s
 Ako ne želiš server, možeš iz **lokalne M3U datoteke** generirati `epg.xml` i `playlist_with_epg.m3u`, pa ih ručno učitati ili hostati negdje.
 
 ```bash
-python3 m3u_to_epg.py /path/do/playliste.m3u [izlazni_folder]
+python3 scripts/m3u_to_epg.py /path/do/playliste.m3u [izlazni_folder]
 ```
 
 - **Playlist u TiviMateu**: učitaj `playlist_with_epg.m3u` (file ili URL).
@@ -162,7 +185,7 @@ Koristi `build_merged_epg.py`. On generira **jedan** XML file u koji:
 **Nemaju svi kanali programe** – samo oni koji se uspiju uskladiti s iptv-epg.org (po **channel id** ili po **normaliziranom imenu**). Zato mogu dobiti programe i kanali iz General, Sport, EXYU, UK, itd., ne samo Croatia. Ostali kanali i dalje su u fileu (TiviMate ih prikaže), ali bez rasporeda.
 
 ```bash
-python3 build_merged_epg.py /path/do/playliste.m3u -o epg_merged.xml
+python3 scripts/build_merged_epg.py /path/do/playliste.m3u -o epg_merged.xml
 # Opcionalno: --limit-countries 50 (brže, manje zemalja)
 ```
 
@@ -172,15 +195,15 @@ Izlaz: `epg_merged.xml`. U TiviMateu dodaj **EPG URL** na taj file (npr. ako ga 
 
 ## Pronalaženje EPG linkova za sve kanale s liste (Playwright)
 
-Skripta `find_epg_links.py` uspoređuje tvoju M3U listu s EPG izvorima s **iptv-epg.org** (po zemljama) i ispisuje koje kanale imaju dostupan EPG s pravim programom (TV vodič).
+Skripta `scripts/find_epg_links.py` uspoređuje tvoju M3U listu s EPG izvorima s **iptv-epg.org** (po zemljama) i ispisuje koje kanale imaju dostupan EPG s pravim programom (TV vodič).
 
 1. **Bez Playwrighta** (fiksna lista zemalja):  
-   `python3 find_epg_links.py /path/do/playliste.m3u -o channels_with_epg.csv`  
+   `python3 scripts/find_epg_links.py /path/do/playliste.m3u -o channels_with_epg.csv`  
    Skenira EPG XML-ove za sve zemlje na iptv-epg.org i upisuje u CSV kanale koji se poklapaju (channel_id, name, epg_url).
 
 2. **S Playwrightom** (dohvat liste EPG linkova s weba):  
    `pip install playwright && playwright install chromium`  
-   `python3 find_epg_links.py /path/do/playliste.m3u --use-playwright -o channels_with_epg.csv`
+   `python3 scripts/find_epg_links.py /path/do/playliste.m3u --use-playwright -o channels_with_epg.csv`
 
 Opcionalno: `--limit-countries 10` (npr. prve 10 zemalja), `--limit-channels 1000` (test na 1000 kanala). Izlaz može biti `.json` umjesto CSV.
 
