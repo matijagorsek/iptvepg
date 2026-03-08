@@ -35,14 +35,22 @@ def parse_extinf(line: str) -> dict:
     tvg_name = (m.group(1).strip() if m else "")
     m_id = re.search(r'tvg-id="([^"]*)"', line)
     tvg_id = (m_id.group(1).strip() if m_id else "")
+    m_grp = re.search(r'group-title="([^"]*)"', line)
+    group_title = (m_grp.group(1).strip() if m_grp else "")
     if "," in line:
         title = line.split(",", 1)[-1].strip()
         if not tvg_name:
             tvg_name = title
-    return {"tvg_name": tvg_name or "Unknown", "tvg_id": tvg_id}
+    return {"tvg_name": tvg_name or "Unknown", "tvg_id": tvg_id, "group_title": group_title}
+
 
 def parse_m3u_channels(m3u_path: str) -> List[Tuple[str, str]]:
     """Vraća listu (channel_id, display_name) za live kanale (s stream_id u URL-u)."""
+    return [(cid, name) for cid, name, _ in parse_m3u_channels_with_groups(m3u_path)]
+
+
+def parse_m3u_channels_with_groups(m3u_path: str) -> List[Tuple[str, str, str]]:
+    """Vraća listu (channel_id, display_name, group_title) za live kanale (s stream_id u URL-u)."""
     path = Path(m3u_path)
     text = path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
@@ -59,7 +67,7 @@ def parse_m3u_channels(m3u_path: str) -> List[Tuple[str, str]]:
             stream_id = extract_stream_id_from_url(url) if url else None
             if stream_id:
                 channel_id = info["tvg_id"].strip() if info.get("tvg_id") else stream_id
-                channels.append((channel_id, info["tvg_name"]))
+                channels.append((channel_id, info["tvg_name"], info.get("group_title", "")))
             i += 1
             continue
         i += 1
