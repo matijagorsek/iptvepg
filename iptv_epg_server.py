@@ -78,11 +78,13 @@ def extract_stream_id_from_url(url: str):
 def parse_extinf(line: str) -> dict:
     m = re.search(r'tvg-name="([^"]*)"', line)
     tvg_name = (m.group(1).strip() if m else "")
+    m_id = re.search(r'tvg-id="([^"]*)"', line)
+    tvg_id = (m_id.group(1).strip() if m_id else "")
     if "," in line:
         title = line.split(",", 1)[-1].strip()
         if not tvg_name:
             tvg_name = title
-    return {"tvg_name": tvg_name or "Unknown"}
+    return {"tvg_name": tvg_name or "Unknown", "tvg_id": tvg_id}
 
 
 def escape_xml(text: str) -> str:
@@ -91,8 +93,9 @@ def escape_xml(text: str) -> str:
 
 def parse_m3u_and_inject_tvg_id(text: str):
     """
-    Parsira M3U, za svaki kanal izvuče stream_id iz URL-a i vrati:
-    - listu (stream_id, display_name, extinf_line, url) za EPG i M3U
+    Parsira M3U, za svaki kanal izvuče stream_id iz URL-a i eventualni tvg-id.
+    Vraća listu (channel_id, display_name, extinf_line, url).
+    channel_id = postojeći tvg-id ako provider šalje (npr. hrt1.hr), inače stream_id.
     """
     lines = text.splitlines()
     channels = []
@@ -110,7 +113,9 @@ def parse_m3u_and_inject_tvg_id(text: str):
                 i += 1
             stream_id = extract_stream_id_from_url(url) if url else None
             if stream_id:
-                channels.append((stream_id, info["tvg_name"], line, url))
+                # Ako provider već šalje tvg-id (npr. hrt1.hr), zadrži ga za EPG/spajanje
+                channel_id = info["tvg_id"] if (info.get("tvg_id") and info["tvg_id"].strip()) else stream_id
+                channels.append((channel_id, info["tvg_name"], line, url))
             i += 1
             continue
         i += 1
@@ -120,13 +125,14 @@ def parse_m3u_and_inject_tvg_id(text: str):
 def build_m3u_with_tvg_id(channels: list) -> str:
     out = StringIO()
     out.write("#EXTM3U\n")
-    for stream_id, _name, extinf, url in channels:
+    for channel_id, _name, extinf, url in channels:
         if 'tvg-id=""' in extinf:
-            new_extinf = extinf.replace('tvg-id=""', f'tvg-id="{escape_xml(stream_id)}"', 1)
+            new_extinf = extinf.replace('tvg-id=""', f'tvg-id="{escape_xml(channel_id)}"', 1)
         elif re.search(r'tvg-id="[^"]*"', extinf):
-            new_extinf = re.sub(r'tvg-id="[^"]*"', f'tvg-id="{escape_xml(stream_id)}"', extinf, count=1)
+            # Provider već ima tvg-id – zadrži ga (ne prepisuj)
+            new_extinf = re.sub(r'tvg-id="[^"]*"', f'tvg-id="{escape_xml(channel_id)}"', extinf, count=1)
         else:
-            new_extinf = extinf.replace("#EXTINF:-1 ", f'#EXTINF:-1 tvg-id="{escape_xml(stream_id)}" ', 1)
+            new_extinf = extinf.replace("#EXTINF:-1 ", f'#EXTINF:-1 tvg-id="{escape_xml(channel_id)}" ', 1)
         out.write(new_extinf + "\n")
         if url:
             out.write(url + "\n")
@@ -137,8 +143,8 @@ def build_epg_xml(channels: list) -> str:
     out = StringIO()
     out.write('<?xml version="1.0" encoding="UTF-8"?>\n')
     out.write('<tv generator-info-name="iptv-epg-server">\n')
-    for stream_id, name in ((c[0], c[1]) for c in channels):
-        out.write(f'  <channel id="{escape_xml(stream_id)}">\n')
+    for channel_id, name in ((c[0], c[1]) for c in channels):
+        out.write(f'  <channel id="{escape_xml(channel_id)}">\n')
         out.write(f'    <display-name>{escape_xml(name)}</display-name>\n')
         out.write('  </channel>\n')
     out.write('</tv>\n')

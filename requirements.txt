@@ -1,1 +1,5 @@
 flask>=2.0.0
+
+# Za find_epg_links.py (opcionalno – dohvat liste EPG URL-ova s weba)
+# playwright>=1.40.0
+# Zatim: playwright install chromium

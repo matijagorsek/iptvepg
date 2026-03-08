@@ -34,19 +34,25 @@ Workflow na GitHubu povlači playlistu s providera i generira `playlist_with_epg
    (isti podaci kao za prijavu kod providera.)
 
 3. **Prvo generiranje**  
-   **Actions** → **Generate EPG and Playlist** → **Run workflow**. Nakon uspjeha u repou će biti mapa `output/` s `playlist_with_epg.m3u` i `epg.xml`.
+   **Actions** → **Generate EPG and Playlist** → **Run workflow**. Nakon uspjeha u repou će biti mapa `output/` s:
+   - `playlist_with_epg.m3u` – playlista s tvg-id
+   - `epg.xml` – samo kanali (bez programa)
+   - **`epg_merged.xml`** – svi kanali + stvarni programi (TV vodič) gdje ih ima na iptv-epg.org → **ovaj stavi u TiviMate**
 
 4. **U TiviMateu**  
    Za ovaj repo (matijagorsek/iptvepg), nakon što workflow generira datoteke:
-   - **Ako koristiš Xtream Codes login**: za tu playlistu dodaj samo **EPG URL**:  
-     `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/epg.xml`  
-     (Playlist ostaje preko prijave, EPG se ubacuje preko ovog linka.)
+   - **Preporučeno – jedan EPG s programima**:  
+     **EPG URL**: `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/epg_merged.xml`  
+     (Svi kanali + TV vodič za HR, DE, AT, itd. – jedan link.)
+   - **Ako koristiš Xtream Codes login**: Playlist ostaje preko prijave; za EPG stavi gornji `epg_merged.xml` link.
    - **Ako koristiš playlist po URL-u**:  
      Playlist: `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/playlist_with_epg.m3u`  
-     EPG: `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/epg.xml`  
-   (Ako koristiš drugu granu, zamijeni `main`.)
+     EPG: `https://raw.githubusercontent.com/matijagorsek/iptvepg/main/output/epg_merged.xml`  
+   (Za samo kanale bez programa možeš koristiti `epg.xml`; za testiranje koristi `epg_merged.xml`. Ako koristiš drugu granu, zamijeni `main`.)
 
 Workflow se automatski pokreće **svakih 12 sati**; možeš ga i ručno pokrenuti u **Actions** → **Run workflow**. Nema uploadanja – sve se odrađuje na GitHubu.
+
+**Testiranje:** Nakon što workflow uspješno prođe, u TiviMateu dodaj playlistu (ili ostani na Xtream Codes login), u EPG postavke zalijepi URL na `epg_merged.xml` i pokreni **Osvježi EPG**. Za kanale s programom (npr. HRT 1, njemački kanali) trebao bi se pojaviti TV vodič.
 
 ### Važno – privatni repo
 
@@ -104,6 +110,41 @@ python3 m3u_to_epg.py /path/do/playliste.m3u [izlazni_folder]
 - **EPG u TiviMateu**: izvor = `epg.xml` (file ili URL).
 
 Kad provider promijeni listu, moraš ponovno pokrenuti skriptu i ponovo učitati/hostati datoteke.
+
+---
+
+## Jedan EPG file za TiviMate (s programima gdje ih ima)
+
+**Želiš jedan link koji u TiviMateu učitavaš kao EPG i koji sadrži i stvarne programe?**  
+Koristi `build_merged_epg.py`. On generira **jedan** XML file u koji:
+
+- **Svi** tvoji kanali ulaze kao `<channel>` – svaki kanal ima ulaz u EPG-u;
+- za kanale koji se poklapaju s [iptv-epg.org](https://iptv-epg.org) (po zemljama) uključuje i **stvarne programe** (TV vodič).
+
+**Nemaju svi kanali programe** – samo oni koji postoje na iptv-epg.org (npr. HR, DE, AT, …). Ostali kanali i dalje su u fileu (TiviMate ih prikaže), ali bez rasporeda.
+
+```bash
+python3 build_merged_epg.py /path/do/playliste.m3u -o epg_merged.xml
+# Opcionalno: --limit-countries 50 (brže, manje zemalja)
+```
+
+Izlaz: `epg_merged.xml`. U TiviMateu dodaj **EPG URL** na taj file (npr. ako ga hostaš na GitHubu: raw link na `epg_merged.xml`). Jedan link = svi kanali + programi gdje su dostupni.
+
+---
+
+## Pronalaženje EPG linkova za sve kanale s liste (Playwright)
+
+Skripta `find_epg_links.py` uspoređuje tvoju M3U listu s EPG izvorima s **iptv-epg.org** (po zemljama) i ispisuje koje kanale imaju dostupan EPG s pravim programom (TV vodič).
+
+1. **Bez Playwrighta** (fiksna lista zemalja):  
+   `python3 find_epg_links.py /path/do/playliste.m3u -o channels_with_epg.csv`  
+   Skenira EPG XML-ove za sve zemlje na iptv-epg.org i upisuje u CSV kanale koji se poklapaju (channel_id, name, epg_url).
+
+2. **S Playwrightom** (dohvat liste EPG linkova s weba):  
+   `pip install playwright && playwright install chromium`  
+   `python3 find_epg_links.py /path/do/playliste.m3u --use-playwright -o channels_with_epg.csv`
+
+Opcionalno: `--limit-countries 10` (npr. prve 10 zemalja), `--limit-channels 1000` (test na 1000 kanala). Izlaz može biti `.json` umjesto CSV.
 
 ---
 
