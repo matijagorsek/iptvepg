@@ -184,10 +184,30 @@ Koristi `build_merged_epg.py`. On generira **jedan** XML file u koji:
 
 **Nemaju svi kanali programe** – samo oni koji se uspiju uskladiti s iptv-epg.org (po **channel id** ili po **normaliziranom imenu**). Zato mogu dobiti programe i kanali iz General, Sport, EXYU, UK, itd., ne samo Croatia. Ostali kanali i dalje su u fileu (TiviMate ih prikaže), ali bez rasporeda.
 
+**Zašto je postotak kanala s programom često nizak?** Ako playlist nema `tvg-id` u #EXTINF, skripta koristi **stream ID** (broj iz URL-a). Na iptv-epg.org ID-ovi su tipa `rtl.hr`, `bbc.uk` – broj nikad neće odgovarati. Spajanje po **imenu** kanala pomaže (npr. "RTL HD" ↔ "RTL"), ali kad provider koristi drugačija imena ili samo brojeve, EPG se ne nađe. Veća pokrivenost zahtijeva playlistu s ispravnim `tvg-id` (npr. iz EPG servera providera) ili ručne alias-e u `epg_iptv/channel_aliases.py`.
+
 ```bash
 python3 scripts/build_merged_epg.py /path/do/playliste.m3u -o epg_merged.xml
 # Opcionalno: --limit-countries 50 (brže, manje zemalja)
 ```
+
+**Fokus na regiju** – maksimalna pokrivenost po imenu (i po ID-u kad postoji) za jednu regiju:
+
+- **EXYU:** `--focus-exyu` (samo AL, BA, HR, ME, MK, RS, SI; npr. "PINK HD" ↔ "Pink", "BHT HD" ↔ "BHT 1")
+- **UK:** `--focus-uk` (samo GB; npr. "BBC One HD" ↔ "BBC One", "ITV HD" ↔ "ITV")
+- **USA:** `--focus-usa` (samo US; npr. "CNN HD" ↔ "CNN", "Fox News HD" ↔ "Fox News")
+- **DE:** `--focus-de` (samo Njemačka; npr. "RTL HD" ↔ "RTL", "Pro 7" ↔ "ProSieben")
+
+```bash
+# EXYU
+python3 scripts/build_merged_epg.py /path/do/playliste.m3u -o epg_exyu.xml --focus-exyu --skip-vod --max-days 3
+# UK / USA / DE
+python3 scripts/build_merged_epg.py /path/do/playliste.m3u -o epg_uk.xml --focus-uk --skip-vod
+python3 scripts/build_merged_epg.py /path/do/playliste.m3u -o epg_usa.xml --focus-usa --skip-vod
+python3 scripts/build_merged_epg.py /path/do/playliste.m3u -o epg_de.xml --focus-de --skip-vod
+```
+
+Ručni odabir zemalja (bez name aliasa): `--only-countries HR,BA,RS,SI,ME,MK,AL`.
 
 Izlaz: `epg_merged.xml`. U TiviMateu dodaj **EPG URL** na taj file (npr. ako ga hostaš na GitHubu: raw link na `epg_merged.xml`). Jedan link = svi kanali + programi gdje su dostupni.
 

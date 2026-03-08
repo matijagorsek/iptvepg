@@ -105,6 +105,10 @@ def get_epg_urls_with_playwright(limit_countries: Optional[int] = None) -> List[
     return out
 
 
+# EXYU/Balkan: zemlje s iptv-epg.org za maksimalnu pokrivenost ex-Yu kanala (HR, BA, RS, SI, ME, MK, AL)
+EXYU_COUNTRY_CODES = {"AL", "BA", "HR", "ME", "MK", "RS", "SI"}
+
+
 def get_epg_urls_fallback() -> List[Tuple[str, str]]:
     """Bez Playwrighta: fiksna lista EPG URL-ova s iptv-epg.org (po zemljama)."""
     countries = [
@@ -115,6 +119,30 @@ def get_epg_urls_fallback() -> List[Tuple[str, str]]:
         "si", "za", "kr", "es", "se", "ch", "tw", "th", "tr", "ug", "ua", "ae", "gb", "us", "uy", "ve", "vn", "zw",
     ]
     return [(c.upper(), f"https://iptv-epg.org/files/epg-{c}.xml") for c in countries]
+
+
+def get_epg_urls_exyu() -> List[Tuple[str, str]]:
+    """Samo EXYU/Balkan zemlje (AL, BA, HR, ME, MK, RS, SI) – za način s maksimalnom pokrivenošću ex-Yu po imenu."""
+    all_list = get_epg_urls_fallback()
+    return [(cc, url) for cc, url in all_list if cc in EXYU_COUNTRY_CODES]
+
+
+def get_epg_urls_uk() -> List[Tuple[str, str]]:
+    """Samo UK (GB) – za način s maksimalnom pokrivenošću UK kanala po imenu."""
+    all_list = get_epg_urls_fallback()
+    return [(cc, url) for cc, url in all_list if cc == "GB"]
+
+
+def get_epg_urls_usa() -> List[Tuple[str, str]]:
+    """Samo USA (US) – za način s maksimalnom pokrivenošću US kanala po imenu."""
+    all_list = get_epg_urls_fallback()
+    return [(cc, url) for cc, url in all_list if cc == "US"]
+
+
+def get_epg_urls_de() -> List[Tuple[str, str]]:
+    """Samo Njemačka (DE) – za način s maksimalnom pokrivenošću DE kanala po imenu."""
+    all_list = get_epg_urls_fallback()
+    return [(cc, url) for cc, url in all_list if cc == "DE"]
 
 
 def fetch_channel_ids_from_epg(epg_url: str, max_bytes: int = 2 * 1024 * 1024):

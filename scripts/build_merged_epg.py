@@ -29,12 +29,16 @@ from epg_iptv.find_epg_links import (
     fetch_channel_ids_from_epg,
     fetch_channel_ids_and_names_from_epg,
     get_epg_urls_fallback,
+    get_epg_urls_de,
+    get_epg_urls_exyu,
+    get_epg_urls_uk,
+    get_epg_urls_usa,
     get_epg_urls_with_playwright,
     parse_m3u_channels,
     parse_m3u_channels_with_groups,
 )
 from epg_iptv.epg_sources_exact import get_tvprofil_exact_sources, TVPROFIL_ALIASES
-from epg_iptv.channel_aliases import all_lookup_variants
+from epg_iptv.channel_aliases import all_lookup_variants, name_match_variants_for_region
 
 
 def normalize_channel_name(name: str) -> str:
@@ -94,6 +98,7 @@ def build_source_to_our_id(
     source_channels_with_names: List[Tuple[str, str]],
     our_channels_all: List[Tuple[str, str]],
     exclude_our_ids: Optional[Set[str]] = None,
+    use_name_aliases_region: Optional[str] = None,
 ) -> Dict[str, str]:
     exclude_our_ids = exclude_our_ids or set()
     mapping: Dict[str, str] = {}
@@ -114,10 +119,21 @@ def build_source_to_our_id(
         norm_our = normalize_channel_name(our_name)
         if not norm_our or len(norm_our) < 2:
             continue
+        our_accept: List[str] = [norm_our]
+        if use_name_aliases_region:
+            our_accept = name_match_variants_for_region(norm_our, use_name_aliases_region)
         for norm_epg, epg_id in epg_norm_to_id:
             if epg_id in assigned_epg:
                 continue
-            if norm_our == norm_epg or (len(norm_epg) >= 3 and (norm_our in norm_epg or norm_epg in norm_our)):
+            match = norm_epg in our_accept or norm_our == norm_epg
+            if not match and len(norm_epg) >= 3:
+                match = norm_our in norm_epg or norm_epg in norm_our
+            if not match and use_name_aliases_region:
+                for a in our_accept:
+                    if a and len(a) >= 2 and (a == norm_epg or (len(norm_epg) >= 3 and (a in norm_epg or norm_epg in a))):
+                        match = True
+                        break
+            if match:
                 mapping[epg_id] = our_id
                 assigned_epg.add(epg_id)
                 assigned_our.add(our_id)
@@ -182,6 +198,32 @@ def main():
     ap.add_argument("--max-days", type=int, default=7, help="Samo programme unutar N dana")
     ap.add_argument("--exclude-group-pattern", type=str, default=None, help="Regex za group-title (isključi kanale)")
     ap.add_argument("--skip-vod", action="store_true", help="Preskoči VOD/videoteka grupe")
+    ap.add_argument(
+        "--focus-exyu",
+        action="store_true",
+        help="Samo EXYU zemlje (AL,BA,HR,ME,MK,RS,SI) + name matching za ex-Yu kanale",
+    )
+    ap.add_argument(
+        "--focus-uk",
+        action="store_true",
+        help="Samo UK (GB) + name matching za britanske kanale",
+    )
+    ap.add_argument(
+        "--focus-usa",
+        action="store_true",
+        help="Samo USA (US) + name matching za američke kanale",
+    )
+    ap.add_argument(
+        "--focus-de",
+        action="store_true",
+        help="Samo Njemačka (DE) + name matching za njemačke kanale",
+    )
+    ap.add_argument(
+        "--only-countries",
+        type=str,
+        default=None,
+        help="Samo ove zemlje (ISO kodovi odvojeni zarezom, npr. HR,BA,RS,SI,ME,MK,AL)",
+    )
     args = ap.parse_args()
 
     m3u_path = Path(args.m3u)
@@ -206,7 +248,32 @@ def main():
         channels = parse_m3u_channels(str(m3u_path))
     print(f"  Kanala za EPG: {len(channels)}")
 
-    if args.use_playwright:
+    focus_region: Optional[str] = None
+    if args.focus_exyu:
+        epg_list = get_epg_urls_exyu()
+        focus_region = "exyu"
+        print("Način: EXYU (samo AL,BA,HR,ME,MK,RS,SI) + name aliasi za ex-Yu.")
+    elif args.focus_uk:
+        epg_list = get_epg_urls_uk()
+        focus_region = "uk"
+        print("Način: UK (GB) + name aliasi za britanske kanale.")
+    elif args.focus_usa:
+        epg_list = get_epg_urls_usa()
+        focus_region = "usa"
+        print("Način: USA (US) + name aliasi za američke kanale.")
+    elif args.focus_de:
+        epg_list = get_epg_urls_de()
+        focus_region = "de"
+        print("Način: DE (Njemačka) + name aliasi za njemačke kanale.")
+    elif args.only_countries:
+        want = {c.strip().upper() for c in args.only_countries.split(",") if c.strip()}
+        all_list = get_epg_urls_fallback()
+        epg_list = [(cc, url) for cc, url in all_list if cc in want]
+        if not epg_list:
+            print(f"Nema EPG izvora za zemlje: {want}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Samo zemlje: {', '.join(sorted(want))}")
+    elif args.use_playwright:
         epg_list = get_epg_urls_with_playwright(limit_countries=args.limit_countries)
         if not epg_list:
             print("  Playwright nije vratio linkove, koristim fiksnu listu.", file=sys.stderr)
@@ -233,7 +300,9 @@ def main():
             if cid.lower() not in channel_id_to_epg:
                 channel_id_to_epg[cid.lower()] = epg_url
     our_ids_with_id_match = {c.lower() for c, _ in channels if channel_id_to_epg.get(c.lower())}
-    print(f"Kanala s id matchom: {len(our_ids_with_id_match)}")
+    print(f"Kanala s točnim ID matchom (tvg-id u EPG izvoru): {len(our_ids_with_id_match)}")
+    if len(channels) > 500 and len(our_ids_with_id_match) < 200:
+        print("  (Malo ID matchova – ako M3U nema tvg-id, koristi se stream ID; za veću pokrivenost trebaju tvg-id u playlisti ili name matching.)")
 
     out_path = Path(args.output)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -278,6 +347,7 @@ def main():
                 source_channels_with_names,
                 channels,
                 exclude_our_ids=channels_linked,
+                use_name_aliases_region=focus_region,
             )
             if not source_to_our:
                 continue
@@ -299,6 +369,8 @@ def main():
     print(f"Zapisano: {out_path}")
     print(f"Ukupno programa upisano: {total_prog}")
     print(f"Kanala s EPG programom: {len(channels_linked)} / {total_channels} ({pct:.1f}%)")
+    if total_channels > 0 and pct < 10:
+        print("  Za više kanala s programom: playlist treba imati tvg-id (npr. rtl.hr, bbc.uk) ili EPG server s istim ID-ovima; inače se spaja samo po imenu kanala.")
     print("U TiviMateu dodaj ovaj file kao EPG URL (npr. raw GitHub link).")
 
 
