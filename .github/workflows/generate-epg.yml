@@ -1,0 +1,44 @@
+# Generira playlist_with_epg.m3u i epg.xml s tvog IPTV providera i commita u repo.
+# TiviMate može povlačiti oba URL-a s raw.githubusercontent.com – bez vlastitog servera.
+#
+# Obavezno: u repo postavi Secrets: IPTV_BASE_URL, IPTV_USERNAME, IPTV_PASSWORD
+# Preporuka: koristi PRIVATNI repo jer playlista sadrži stream URL-ove (često i credentials).
+
+name: Generate EPG and Playlist
+
+on:
+  schedule:
+    # Svakih 12 sati
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+    # Ručno pokretanje: Actions → Generate EPG and Playlist → Run workflow
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate playlist and EPG
+        env:
+          IPTV_BASE_URL: ${{ secrets.IPTV_BASE_URL }}
+          IPTV_USERNAME: ${{ secrets.IPTV_USERNAME }}
+          IPTV_PASSWORD: ${{ secrets.IPTV_PASSWORD }}
+        run: python3 generate_epg_github.py output
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/playlist_with_epg.m3u output/epg.xml
+          git diff --staged --quiet || git commit -m "Update playlist and EPG [automated]"
+          git push
